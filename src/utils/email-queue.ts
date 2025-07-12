@@ -69,7 +69,7 @@ export class EmailQueue {
     this.processing = true;
     this.logger.info('Started processing email queue');
 
-    while (this.queue.length > 0) {
+    while (this.queue.length > 0 && this.processing) {
       const item = this.getNextItem();
       
       if (!item) {
@@ -134,7 +134,10 @@ export class EmailQueue {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise(resolve => {
+      const timer = setTimeout(resolve, ms);
+      timer.unref(); // Don't keep the process alive
+    });
   }
 
   /**
@@ -180,7 +183,17 @@ export class EmailQueue {
    */
   clear(): void {
     this.queue = [];
+    this.processing = false; // Stop processing
     this.logger.info('Email queue cleared');
+  }
+
+  /**
+   * Stop processing and clean up
+   */
+  destroy(): void {
+    this.processing = false;
+    this.queue = [];
+    this.logger.info('Email queue destroyed');
   }
 
   /**

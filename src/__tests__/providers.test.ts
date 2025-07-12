@@ -2,6 +2,23 @@ import { MockSendGridProvider } from '../providers/mock-sendgrid.provider';
 import { MockMailgunProvider } from '../providers/mock-mailgun.provider';
 import { EmailMessage } from '../types';
 
+// Mock console methods to suppress output during tests
+const originalConsoleLog = console.log;
+const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
+
+beforeAll(() => {
+  console.log = jest.fn();
+  console.warn = jest.fn();
+  console.error = jest.fn();
+});
+
+afterAll(() => {
+  console.log = originalConsoleLog;
+  console.warn = originalConsoleWarn;
+  console.error = originalConsoleError;
+});
+
 describe('Mock Email Providers', () => {
   const testEmail: EmailMessage = {
     id: 'test-email-1',
@@ -30,11 +47,7 @@ describe('Mock Email Providers', () => {
     it('should fail when failure rate is set', async () => {
       provider.setFailureRate(1); // 100% failure rate
       
-      const result = await provider.sendEmail(testEmail);
-      
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
-      expect(result.messageId).toBeUndefined();
+      await expect(provider.sendEmail(testEmail)).rejects.toThrow('SendGrid API temporarily unavailable');
     });
 
     it('should respect latency settings', async () => {
@@ -72,11 +85,7 @@ describe('Mock Email Providers', () => {
     it('should fail when failure rate is set', async () => {
       provider.setFailureRate(1); // 100% failure rate
       
-      const result = await provider.sendEmail(testEmail);
-      
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
-      expect(result.messageId).toBeUndefined();
+      await expect(provider.sendEmail(testEmail)).rejects.toThrow('Mailgun service temporarily overloaded');
     });
 
     it('should have correct provider name', () => {

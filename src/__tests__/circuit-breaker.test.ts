@@ -1,6 +1,23 @@
 import { CircuitBreaker } from '../utils/circuit-breaker';
 import { CircuitBreakerConfig, CircuitBreakerState } from '../types';
 
+// Mock console methods to suppress output during tests
+const originalConsoleLog = console.log;
+const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
+
+beforeAll(() => {
+  console.log = jest.fn();
+  console.warn = jest.fn();
+  console.error = jest.fn();
+});
+
+afterAll(() => {
+  console.log = originalConsoleLog;
+  console.warn = originalConsoleWarn;
+  console.error = originalConsoleError;
+});
+
 describe('CircuitBreaker', () => {
   let circuitBreaker: CircuitBreaker;
   let config: CircuitBreakerConfig;
@@ -71,6 +88,13 @@ describe('CircuitBreaker', () => {
       await circuitBreaker.execute(() => Promise.resolve('success'));
     } catch (error) {
       // This might fail, but state should change
+    }
+
+    expect(circuitBreaker.getState()).toBe(CircuitBreakerState.HALF_OPEN);
+    
+    // Need 3 successful calls to close from HALF_OPEN
+    for (let i = 0; i < 3; i++) {
+      await circuitBreaker.execute(() => Promise.resolve('success'));
     }
 
     expect(circuitBreaker.getState()).toBe(CircuitBreakerState.CLOSED);

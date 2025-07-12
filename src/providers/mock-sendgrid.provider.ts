@@ -31,11 +31,7 @@ export class MockSendGridProvider implements EmailProvider {
       
       this.logger.error(`Failed to send email ${message.id}: ${error}`);
       
-      return {
-        success: false,
-        error,
-        duration
-      };
+      throw new Error(error);
     }
     
     const duration = Date.now() - startTime;
@@ -51,7 +47,10 @@ export class MockSendGridProvider implements EmailProvider {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise(resolve => {
+      const timer = setTimeout(resolve, ms);
+      timer.unref(); // Don't keep the process alive
+    });
   }
 
   // Method to simulate provider health changes for testing

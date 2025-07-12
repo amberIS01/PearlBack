@@ -48,7 +48,10 @@ export class RetryManager {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise(resolve => {
+      const timer = setTimeout(resolve, ms);
+      timer.unref(); // Don't keep the process alive
+    });
   }
 
   public getConfig(): RetryConfig {

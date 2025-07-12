@@ -4,6 +4,23 @@ import { MockMailgunProvider } from '../providers/mock-mailgun.provider';
 import { EmailMessage, EmailServiceConfig, CircuitBreakerState } from '../types';
 import { createDefaultConfig } from '../index';
 
+// Mock console methods to suppress output during tests
+const originalConsoleLog = console.log;
+const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
+
+beforeAll(() => {
+  console.log = jest.fn();
+  console.warn = jest.fn();
+  console.error = jest.fn();
+});
+
+afterAll(() => {
+  console.log = originalConsoleLog;
+  console.warn = originalConsoleWarn;
+  console.error = originalConsoleError;
+});
+
 describe('EmailService', () => {
   let emailService: EmailService;
   let sendGridProvider: MockSendGridProvider;
@@ -33,6 +50,12 @@ describe('EmailService', () => {
     emailService = new EmailService([sendGridProvider, mailgunProvider], config);
   });
 
+  afterEach(() => {
+    if (emailService) {
+      emailService.destroy();
+    }
+  });
+
   describe('sendEmail', () => {
     it('should send email successfully with primary provider', async () => {
       const result = await emailService.sendEmail(testEmail);
@@ -53,13 +76,29 @@ describe('EmailService', () => {
     });
 
     it('should fail when all providers fail', async () => {
+      // Create a service with minimal retry config to avoid timeout
+      const fastFailConfig = {
+        ...config,
+        retry: {
+          maxRetries: 1,
+          baseDelay: 10,
+          maxDelay: 50,
+          backoffMultiplier: 1.5
+        }
+      };
+      
+      const fastFailService = new EmailService([sendGridProvider, mailgunProvider], fastFailConfig);
+      
       sendGridProvider.setFailureRate(1);
       mailgunProvider.setFailureRate(1);
       
-      const result = await emailService.sendEmail(testEmail);
+      const result = await fastFailService.sendEmail(testEmail);
       
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
+      
+      // Clean up
+      fastFailService.destroy();
     });
 
     it('should respect idempotency', async () => {
@@ -103,17 +142,28 @@ describe('EmailService', () => {
       sendGridProvider.setFailureRate(1);
       
       // Send enough emails to trip the circuit breaker
+      let failureCount = 0;
       for (let i = 0; i < 3; i++) {
-        await quickService.sendEmail({
+        const result = await quickService.sendEmail({
           ...testEmail,
           id: `test-email-${i}`
         });
+        
+        if (!result.success) {
+          failureCount++;
+        }
       }
+      
+      // Should have failures
+      expect(failureCount).toBeGreaterThan(0);
       
       const stats = quickService.getStats();
       const sgStats = stats.providers.find(p => p.name === 'SendGrid');
       
       expect(sgStats?.circuitBreakerState).toBe(CircuitBreakerState.OPEN);
+      
+      // Clean up
+      quickService.destroy();
     });
   });
 
@@ -141,6 +191,9 @@ describe('EmailService', () => {
       
       // Should take at least 1 second due to rate limiting
       expect(duration).toBeGreaterThan(900);
+      
+      // Clean up
+      limitedService.destroy();
     });
   });
 
@@ -157,8 +210,8 @@ describe('EmailService', () => {
         emailService.sendEmailAsync(email, index);
       });
       
-      // Wait for processing
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait for processing to complete
+      await emailService.waitForQueueCompletion();
       
       const stats = emailService.getStats();
       expect(stats.queue.total).toBe(0); // All processed
@@ -204,8 +257,12 @@ describe('EmailService', () => {
       expect(stats.idempotency.recordCount).toBe(0);
     });
 
-    it('should clear queue', () => {
+    it('should clear queue', async () => {
       emailService.sendEmailAsync(testEmail);
+      
+      // Wait a bit for the queue to start processing
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
       emailService.clearQueue();
       
       const stats = emailService.getStats();

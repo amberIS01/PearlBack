@@ -14,13 +14,14 @@ export class IdempotencyManager {
   private records = new Map<string, IdempotencyRecord>();
   private ttlMs: number;
   private logger: Logger;
+  private cleanupInterval: NodeJS.Timeout;
 
   constructor(ttlMs: number) {
     this.ttlMs = ttlMs;
     this.logger = new Logger('IdempotencyManager');
     
     // Clean up expired records every 5 minutes
-    setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
   }
 
   /**
@@ -116,5 +117,11 @@ export class IdempotencyManager {
   public clear(): void {
     this.records.clear();
     this.logger.info('Idempotency manager cleared');
+  }
+
+  public destroy(): void {
+    clearInterval(this.cleanupInterval);
+    this.clear();
+    this.logger.info('Idempotency manager destroyed');
   }
 }

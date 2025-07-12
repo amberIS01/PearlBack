@@ -301,4 +301,33 @@ export class EmailService {
     this.emailQueue.clear();
     this.logger.info('Email queue cleared');
   }
+
+  /**
+   * Wait for the email queue to finish processing all items
+   */
+  async waitForQueueCompletion(timeoutMs: number = 5000): Promise<void> {
+    const startTime = Date.now();
+    
+    while (this.emailQueue.size() > 0) {
+      if (Date.now() - startTime > timeoutMs) {
+        throw new Error('Queue processing timeout');
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+
+  /**
+   * Destroy the service and clean up resources
+   */
+  destroy(): void {
+    // Stop the queue processing first
+    this.emailQueue.destroy();
+    
+    // Clean up other components
+    this.resetCircuitBreakers();
+    this.resetRateLimiter();
+    this.idempotencyManager.destroy();
+    
+    this.logger.info('Email service destroyed');
+  }
 }

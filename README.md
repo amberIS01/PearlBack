@@ -18,36 +18,301 @@ A robust, production-ready email sending service built with TypeScript that impl
 - ✅ **Statistics**: Real-time service health and performance metrics
 - ✅ **Mock Providers**: Realistic mock providers for testing and development
 
-## Architecture
-
-The service follows SOLID principles and uses a layered architecture:
+## Project Structure
 
 ```
-EmailService
-├── Providers (SendGrid, Mailgun mocks)
-├── CircuitBreaker (per provider)
-├── RateLimiter (global)
-├── IdempotencyManager (global)
-├── RetryManager (per operation)
-├── EmailQueue (async processing)
-└── Logger (structured logging)
+src/
+├── email-service.ts          # Main service implementation
+├── types.ts                  # TypeScript interfaces and types
+├── index.ts                  # Main entry point and configuration
+├── providers/                # Email provider implementations
+│   ├── mock-sendgrid.provider.ts
+│   └── mock-mailgun.provider.ts
+├── utils/                    # Utility classes for resilience patterns
+│   ├── circuit-breaker.ts
+│   ├── rate-limiter.ts
+│   ├── idempotency-manager.ts
+│   ├── retry-manager.ts
+│   ├── email-queue.ts
+│   └── logger.ts
+└── __tests__/                # Comprehensive test suite
+    ├── email-service.test.ts
+    ├── providers.test.ts
+    ├── circuit-breaker.test.ts
+    ├── rate-limiter.test.ts
+    ├── retry-manager.test.ts
+    └── idempotency-manager.test.ts
 ```
 
-## Quick Start
-
-### Installation
+## Installation & Setup
 
 ```bash
+# Install dependencies
 npm install
+
+# Build the project
+npm run build
+
+# Run tests
+npm test
+
+# Run tests with coverage
+npm run test:coverage
 ```
 
-### Basic Usage
+## Usage
+
+### Basic Email Sending
 
 ```typescript
 import { createEmailService } from './src';
 
 // Create service with default configuration
 const emailService = createEmailService();
+
+// Send an email
+const result = await emailService.sendEmail({
+  id: 'unique-email-id',
+  to: 'recipient@example.com',
+  from: 'sender@example.com',
+  subject: 'Hello World',
+  body: 'This is a test email'
+});
+
+console.log('Email sent:', result.success);
+```
+
+### Asynchronous Queue Processing
+
+```typescript
+// Add email to queue for background processing
+await emailService.sendEmailAsync({
+  id: 'queue-email-1',
+  to: 'user@example.com',
+  from: 'noreply@example.com',
+  subject: 'Welcome!',
+  body: 'Welcome to our service!'
+}, 1); // Priority level
+
+// Check queue statistics
+const stats = emailService.getStats();
+console.log('Queue status:', stats.queue);
+```
+
+### Configuration
+
+```typescript
+import { EmailService } from './src/email-service';
+import { MockSendGridProvider, MockMailgunProvider } from './src/providers';
+
+const customConfig = {
+  // Circuit breaker settings
+  circuitBreaker: {
+    failureThreshold: 5,      // Open after 5 failures
+    resetTimeoutMs: 30000,    // Try again after 30 seconds
+    monitoringPeriodMs: 60000 // Monitor failures over 1 minute
+  },
+  
+  // Retry settings
+  retry: {
+    maxRetries: 3,
+    baseDelay: 1000,          // Start with 1 second
+    maxDelay: 30000,          // Max 30 seconds
+    backoffMultiplier: 2      // Double delay each retry
+  },
+  
+  // Rate limiting
+  rateLimit: {
+    maxRequestsPerMinute: 100,
+    windowSizeMs: 60000
+  },
+  
+  // Other settings
+  idempotencyTtlMs: 3600000,  // 1 hour
+  enableIdempotency: true,
+  logLevel: 'info'
+};
+
+const providers = [
+  new MockSendGridProvider(0.1, 100), // 10% failure rate, 100ms latency
+  new MockMailgunProvider(0.1, 150)   // 10% failure rate, 150ms latency
+];
+
+const emailService = new EmailService(providers, customConfig);
+```
+
+## Testing
+
+### Run All Tests
+```bash
+npm test
+```
+
+### Run Specific Test Suites
+```bash
+# Test email service
+npx jest src/__tests__/email-service.test.ts
+
+# Test circuit breaker
+npx jest src/__tests__/circuit-breaker.test.ts
+
+# Test providers
+npx jest src/__tests__/providers.test.ts
+
+# Test rate limiter
+npx jest src/__tests__/rate-limiter.test.ts
+
+# Test retry manager
+npx jest src/__tests__/retry-manager.test.ts
+
+# Test idempotency
+npx jest src/__tests__/idempotency-manager.test.ts
+```
+
+### Test Coverage
+```bash
+npm run test:coverage
+```
+
+### Run Tests with Verbose Output
+```bash
+npm test -- --verbose
+```
+
+## Understanding the Resilience Patterns
+
+### Circuit Breaker
+- Opens after configured failure threshold
+- Prevents requests to failing providers
+- Automatically tries to recover after timeout
+- Provides fast-fail behavior
+
+### Retry Logic
+- Exponential backoff with jitter
+- Configurable max retries and delays
+- Prevents thundering herd problems
+- Logs all retry attempts
+
+### Rate Limiting
+- Sliding window algorithm
+- Configurable requests per minute
+- Automatic backoff when limits hit
+- Prevents API quota exhaustion
+
+### Idempotency
+- Prevents duplicate sends using unique IDs
+- Configurable TTL for cache entries
+- Returns cached results for duplicates
+- Handles concurrent requests safely
+
+### Provider Fallback
+- Automatic failover to backup providers
+- Intelligent provider selection
+- Health tracking per provider
+- Graceful degradation
+
+## API Reference
+
+### EmailService Methods
+
+#### `sendEmail(message: EmailMessage): Promise<EmailSendResult>`
+Send an email synchronously with full resilience features.
+
+#### `sendEmailAsync(message: EmailMessage, priority?: number): Promise<void>`
+Add email to queue for asynchronous processing.
+
+#### `getStats(): ServiceStats`
+Get comprehensive service statistics including:
+- Provider health and circuit breaker states
+- Rate limiter status
+- Idempotency cache size
+- Queue statistics
+
+#### `destroy(): void`
+Clean up resources and stop background processes.
+
+### Configuration Options
+
+All configuration options are optional and have sensible defaults:
+
+```typescript
+interface EmailServiceConfig {
+  circuitBreaker: {
+    failureThreshold: number;     // Default: 3
+    resetTimeoutMs: number;       // Default: 60000 (1 minute)
+    monitoringPeriodMs: number;   // Default: 300000 (5 minutes)
+  };
+  retry: {
+    maxRetries: number;           // Default: 3
+    baseDelay: number;            // Default: 1000ms
+    maxDelay: number;             // Default: 30000ms
+    backoffMultiplier: number;    // Default: 2
+  };
+  rateLimit: {
+    maxRequestsPerMinute: number; // Default: 60
+    windowSizeMs: number;         // Default: 60000ms
+  };
+  idempotencyTtlMs: number;       // Default: 3600000 (1 hour)
+  enableIdempotency: boolean;     // Default: true
+  logLevel: 'error' | 'warn' | 'info' | 'debug'; // Default: 'info'
+}
+```
+
+## Development
+
+### Build
+```bash
+npm run build
+```
+
+### Watch Mode
+```bash
+npm run build:watch
+```
+
+### Type Checking
+```bash
+npx tsc --noEmit
+```
+
+### Linting
+```bash
+npm run lint
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Tests failing with "Cannot log after tests are done"**
+   - This is fixed - all tests properly clean up resources
+
+2. **Circuit breaker not opening**
+   - Check that providers are throwing errors (not returning failure objects)
+   - Verify failure threshold configuration
+
+3. **Rate limiting not working**
+   - Check windowSizeMs and maxRequestsPerMinute settings
+   - Ensure time-based tests account for actual delays
+
+4. **Memory leaks in tests**
+   - All services have proper cleanup via `destroy()` method
+   - Tests use `afterEach` hooks to clean up
+
+### Debug Logging
+
+Set log level to 'debug' for detailed operation logs:
+
+```typescript
+const config = {
+  // ... other config
+  logLevel: 'debug'
+};
+```
+
+## License
+
+MIT License - see LICENSE file for details.
 
 // Send an email
 const message = {
